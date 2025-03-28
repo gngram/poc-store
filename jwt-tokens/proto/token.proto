@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package token;
+
+message VMInfo {
+  string id = 1;
+  string name = 2;
+  string ip = 3;
+}
+
+message TokenClaims {
+  string purpose = 1;
+  VMInfo src_vm = 2;
+  VMInfo dst_vm = 3;
+  uint64 iat = 4;
+  uint64 exp = 5;
+}
+
