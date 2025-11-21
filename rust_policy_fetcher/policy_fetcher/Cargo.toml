@@ -1,0 +1,16 @@
+[package]
+name = "policy_fetcher"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio   = { version = "1", features = ["macros", "rt-multi-thread", "fs"] }
+reqwest = { version = "0.12", default-features = false, features = [
+  "json",
+  "gzip",
+  "rustls-tls",
+  "deflate",
+] }
+flate2  = "1"
+tar     = "0.4"
+
