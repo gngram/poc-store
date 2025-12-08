@@ -1,0 +1,17 @@
+[package]
+name = "policy-updater"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+gix = { version = "0.75", default-features = false, features = [
+    "blocking-network-client",
+    "blocking-http-transport-reqwest-rust-tls",
+    "worktree-mutation",
+    "revision",
+    "blob-diff",
+] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+filter = "0.2.0"
+anyhow = "1.0"
