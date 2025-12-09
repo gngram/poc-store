@@ -5,14 +5,15 @@ use std::sync::atomic::AtomicBool;
 use anyhow::{anyhow, Context, Result};
 use gix::{progress, remote::Direction};
 use gix::object::tree::diff::{Action, Change};
-use tracing::{info};
 
+use tracing::info;
 /* RepoUpdater structure */
 pub struct RepoUpdater {
     pub url: String,
     pub branch: String,
     pub destination: PathBuf,
 
+    auth_url: String,  // URL with embedded credentials (if any)
     repo: Option<gix::Repository>,
     repo_head: Option<gix::hash::ObjectId>,
 }
@@ -22,11 +23,25 @@ impl RepoUpdater {
         url: U,
         branch: B,
         destination: P,
+        access_token: Option<String>,
     ) -> Result<Self> {
+        let url = url.into();
+        let auth_url = if let Some(token) = access_token {
+            // Embed token in URL for GitHub
+            if url.contains("github.com") {
+                url.replace("https://", &format!("https://x-access-token:{}@", token))
+            } else {
+                url.clone()
+            }
+        } else {
+            url.clone()
+        };
+
         let mut updater = Self {
-            url: url.into(),
+            url,
             branch: branch.into(),
             destination: destination.into(),
+            auth_url,
             repo: None,
             repo_head: None,
         };
@@ -51,7 +66,11 @@ impl RepoUpdater {
                         .map(|s| s.to_string())
                         .unwrap_or_default();
 
-                    if current_branch == updater.branch && remote_url == updater.url {
+                    // Compare URLs without embedded credentials
+                    let stored_url = Self::strip_credentials(&remote_url);
+                    let expected_url = Self::strip_credentials(&updater.url);
+
+                    if current_branch == updater.branch && stored_url == expected_url {
                         info!(
                             "Successfully loaded existing repository from '{}'",
                             updater.destination.display()
@@ -88,6 +107,18 @@ impl RepoUpdater {
         Ok(updater)
     }
 
+    /// Strip credentials from URL for comparison
+    fn strip_credentials(url: &str) -> String {
+        if let Some(at_pos) = url.find('@') {
+            if let Some(scheme_end) = url.find("://") {
+                let scheme = &url[..scheme_end + 3];
+                let host_part = &url[at_pos + 1..];
+                return format!("{}{}", scheme, host_part);
+            }
+        }
+        url.to_string()
+    }
+
     fn clone_repo(&mut self) -> Result<()> {
         info!("Cloning repository from: {}", self.url);
         info!("Branch: {}", self.branch);
@@ -95,7 +126,7 @@ impl RepoUpdater {
 
         let interrupt = &gix::interrupt::IS_INTERRUPTED;
 
-        let mut prepare = gix::prepare_clone(self.url.as_str(), &self.destination)?
+        let mut prepare = gix::prepare_clone(self.auth_url.as_str(), &self.destination)?
             .with_ref_name(Some(self.branch.as_str()))?;
 
         let (mut checkout, _fetch_outcome) =
@@ -104,12 +135,63 @@ impl RepoUpdater {
         let (repo, _checkout_outcome) =
             checkout.main_worktree(gix::progress::Discard, interrupt)?;
 
+        // Update the remote URL to not include credentials in the config
+        if self.auth_url != self.url {
+            Self::update_remote_url(&repo, "origin", &self.url)?;
+        }
+
         let head = repo.head_id()?;
         self.repo_head = Some(head.detach());
         self.repo = Some(repo);
 
         info!("Repository cloned successfully.");
         info!("Checked out HEAD: {}", self.repo_head.as_ref().unwrap());
+        Ok(())
+    }
+
+    /// Update remote URL in repository config
+    fn update_remote_url(repo: &gix::Repository, remote_name: &str, url: &str) -> Result<()> {
+        let config_path = repo.path().join("config");
+
+        // Read the config file
+        let config_content = std::fs::read_to_string(&config_path)?;
+
+        // Parse and update the URL
+        let mut lines: Vec<String> = config_content.lines().map(|s| s.to_string()).collect();
+        let section_header = format!("[remote \"{}\"]", remote_name);
+        let mut in_section = false;
+        let mut url_updated = false;
+
+        for i in 0..lines.len() {
+            let line = lines[i].trim();
+
+            // Check if we're entering the target section
+            if line == section_header {
+                in_section = true;
+                continue;
+            }
+
+            // Check if we're leaving the section
+            if in_section && line.starts_with('[') {
+                in_section = false;
+            }
+
+            // Update the URL if we're in the right section
+            if in_section && line.starts_with("url") {
+                lines[i] = format!("\turl = {}", url);
+                url_updated = true;
+                break;
+            }
+        }
+
+        // If URL wasn't found, add the section
+        if !url_updated {
+            lines.push(section_header);
+            lines.push(format!("\turl = {}", url));
+        }
+
+        // Write back
+        std::fs::write(&config_path, lines.join("\n") + "\n")?;
         Ok(())
     }
 
@@ -121,6 +203,29 @@ impl RepoUpdater {
         let repo = self.repo.as_mut().context(
             "Repository not loaded. Call clone_repo or load_from_path first.",
         )?;
+
+        // Temporarily update remote URL with credentials if needed
+        let need_restore = if self.auth_url != self.url {
+            Self::update_remote_url(repo, "origin", &self.auth_url)?;
+            true
+        } else {
+            false
+        };
+
+        let result = self.perform_pull();
+
+        // Restore URL without credentials
+        if need_restore {
+            if let Some(repo) = self.repo.as_ref() {
+                Self::update_remote_url(repo, "origin", &self.url).ok();
+            }
+        }
+
+        result
+    }
+
+    fn perform_pull(&mut self) -> Result<Option<gix::hash::ObjectId>> {
+        let repo = self.repo.as_mut().unwrap();
 
         let mut remote =
             repo.find_remote("origin").context("Remote 'origin' not found")?;

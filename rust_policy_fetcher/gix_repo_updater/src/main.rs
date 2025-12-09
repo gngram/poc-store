@@ -20,10 +20,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(fmt_layer)
         .init();
 
+    let access_token = Some("".to_string());
+
+
     let mut updater = RepoUpdater::new(
         "https://github.com/gngram/policy-store.git",
         "test_policy",
         "/work/policies",
+        access_token,
     )?;
 
     info!("Starting poller... Current HEAD is: {}", updater.repo_head().unwrap());
