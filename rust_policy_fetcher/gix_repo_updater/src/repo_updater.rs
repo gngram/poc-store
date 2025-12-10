@@ -1,17 +1,16 @@
-use gix::bstr::ByteSlice;
 use std::path::PathBuf;
 use gix;
-use std::sync::atomic::AtomicBool;
-use anyhow::{anyhow, Context, Result};
-use gix::{progress, remote::Direction};
+use gix::bstr::ByteSlice;
 use gix::object::tree::diff::{Action, Change};
 use tracing::{info};
+use anyhow::{Context, Result};
 
 /* RepoUpdater structure */
 pub struct RepoUpdater {
     pub url: String,
     pub branch: String,
     pub destination: PathBuf,
+    pub remote_name: String,
 
     repo: Option<gix::Repository>,
     repo_head: Option<gix::hash::ObjectId>,
@@ -23,12 +22,23 @@ impl RepoUpdater {
         branch: B,
         destination: P,
     ) -> Result<Self> {
+        Self::new_inner(url, branch, destination, "origin")
+    }
+
+    fn new_inner<U: Into<String>, B: Into<String>, P: Into<PathBuf>, R: Into<String>>(
+        url: U,
+        branch: B,
+        destination: P,
+        remote: R,
+    ) -> Result<Self> {
         let mut updater = Self {
             url: url.into(),
             branch: branch.into(),
             destination: destination.into(),
+            remote_name: remote.into(),
             repo: None,
             repo_head: None,
+
         };
 
         /* Attempt to load and validate policies from the existing repository */
@@ -40,7 +50,7 @@ impl RepoUpdater {
                       Branch is fixed to avoid any merge conflict.
                     */
                     let head_ref = repo.head()?;
-                    let current_branch = head_ref
+                    let _current_branch = head_ref
                         .referent_name()
                         .map(|r| r.shorten().to_string())
                         .unwrap_or_default();
@@ -51,7 +61,7 @@ impl RepoUpdater {
                         .map(|s| s.to_string())
                         .unwrap_or_default();
 
-                    if current_branch == updater.branch && remote_url == updater.url {
+                    if remote_url == updater.url {
                         info!(
                             "Successfully loaded existing repository from '{}'",
                             updater.destination.display()
@@ -62,7 +72,7 @@ impl RepoUpdater {
                         return Ok(updater);
                     } else {
                         info!(
-                            "Repository at '{}' is invalid (branch/URL mismatch). Re-cloning...",
+                            "Repository at '{}' is not from provided source. Re-cloning...",
                             updater.destination.display()
                         );
                     }
@@ -117,105 +127,102 @@ impl RepoUpdater {
         self.repo_head
     }
 
-    pub fn pull(&mut self) -> Result<Option<gix::hash::ObjectId>> {
-        let repo = self.repo.as_mut().context(
-            "Repository not loaded. Call clone_repo or load_from_path first.",
+    fn fetch(&self) -> Result<()> {
+        let repo = self.repo.as_ref().context("Repo should be initialized")?;
+        let remote_name = self.remote_name.as_str();
+        let remote = repo.find_remote(remote_name)?;
+
+        let mut progress = gix::progress::Discard;
+        let _fetch_outcome = remote
+            .connect(gix::remote::Direction::Fetch)?
+            .prepare_fetch(&mut progress, Default::default())?
+            .receive(progress, &gix::interrupt::IS_INTERRUPTED)?;
+        Ok(())
+    }
+
+    fn checkout(&mut self, commit_id: gix::hash::ObjectId) -> Result<()> {
+        let repo = self.repo.as_ref().context("Repo should be initialized")?;
+        let local_branch = format!("refs/heads/{}", self.branch);
+        let remote_name = self.remote_name.as_str();
+
+        // Create or update local branch
+        match repo.find_reference(&local_branch) {
+            Ok(mut branch_ref) => {
+                // Branch exists, update it
+                branch_ref.set_target_id(commit_id, "fast-forward from remote")?;
+            }
+            Err(_) => {
+                // Create new branch
+                repo.reference(
+                    local_branch.as_str(),
+                    commit_id,
+                    gix::refs::transaction::PreviousValue::MustNotExist,
+                    format!("branch from {}/{}", remote_name, self.branch),
+                )?;
+            }
+        }
+
+        // Update HEAD to point to the branch symbolically
+        std::fs::write(
+            repo.git_dir().join("HEAD"),
+            format!("ref: {}\n", local_branch)
         )?;
 
-        let mut remote =
-            repo.find_remote("origin").context("Remote 'origin' not found")?;
+        // Perform checkout to update working directory
+        let commit = repo.find_object(commit_id)?.into_commit();
+        let tree = commit.tree()?;
 
-        info!("Fetching origin/{}...", self.branch);
-
-        /* Fetch branch HEAD from remote */
-        let refspec = format!(
-            "+refs/heads/{}:refs/remotes/origin/{}",
-            self.branch, self.branch
-        );
-        remote.replace_refspecs(Some(refspec.as_str()), Direction::Fetch)
-              .expect("static refspec must be valid");
-
-        let mut fetch_progress = progress::Discard;
-        remote
-            .connect(Direction::Fetch)?
-            .prepare_fetch(&mut fetch_progress, Default::default())?
-            .receive(&mut fetch_progress, &gix::interrupt::IS_INTERRUPTED)?;
-
-        /* Compare remote and local commit id */
-        let local_id = self
-            .repo_head
-            .context("Internal state error: repo_head is not set. Call clone_repo or load_from_path first.")?;
-
-        let remote_ref_name = format!("refs/remotes/origin/{}", self.branch);
-        let remote_ref = repo.find_reference(&remote_ref_name)?;
-        let remote_id = remote_ref.id().detach();
-
-        if local_id == remote_id {
-            info!("Already up to date.");
-            return Ok(None);
-        }
-
-        /* Before fast-forward check local must be ancestor of remote */
-        info!("Verifying ancestry...");
-        let base = repo.merge_base(local_id, remote_id)?;
-        if base != local_id {
-            return Err(anyhow!(
-                "Update rejected: local {} is not an ancestor of remote {} (history diverged)",
-                local_id,
-                remote_id
-            ));
-        }
-
-        /* Move local branch ref to remote commit */
-        info!("Fast-forwarding {} to {}", self.branch, remote_id);
-        let mut local_ref =
-            repo.find_reference(&format!("refs/heads/{}", self.branch))?;
-        local_ref.set_target_id(remote_id, "pull: fast-forward only")?;
-
-        use gix::worktree::state::checkout as worktree_checkout;
-
-        let workdir = repo
-            .workdir()
-            .context("No worktree found (is this a bare repository?)")?;
-
-        let tree_id = repo
-            .find_object(remote_id)?
-            .peel_to_kind(gix::object::Kind::Tree)?
-            .id;
-        let mut index = repo.index_from_tree(&tree_id)?;
-
-        let mut checkout_progress = progress::Discard;
-        let mut attributes_progress = progress::Discard;
-        let should_interrupt = AtomicBool::new(false);
+        // Checkout the tree to the working directory
+        let mut index = repo.index_from_tree(&tree.id)?;
+        let opts = gix::worktree::state::checkout::Options {
+            overwrite_existing: true,
+            ..Default::default()
+        };
         let objects = repo.objects.clone().into_arc()?;
 
-        worktree_checkout(
+        gix::worktree::state::checkout(
             &mut index,
-            workdir,
+            repo.workdir().context("Repository has no working directory")?,
             objects,
-            &mut checkout_progress,
-            &mut attributes_progress,
-            &should_interrupt,
-            gix::worktree::state::checkout::Options {
-                destination_is_initially_empty: false,
-                overwrite_existing: true,
-                ..Default::default()
-            },
+            &gix::progress::Discard,
+            &gix::progress::Discard,
+            &gix::interrupt::IS_INTERRUPTED,
+            opts,
         )?;
 
-        let index_path = repo.index_path();
-        let mut file = gix::lock::File::acquire_to_update_resource(
-            &index_path,
-            gix::lock::acquire::Fail::Immediately,
-            None,
-        )?;
-        index.write_to(&mut file, gix::index::write::Options::default())?;
-        file.commit()?;
+        // Write the index to disk
+        index.write(gix::index::write::Options::default())?;
 
-        self.repo_head = Some(remote_id);
+        // Update repo_head to the new commit
+        self.repo_head = Some(commit_id);
+        info!("Checked out HEAD: {}", commit_id);
+        Ok(())
+    }
 
-        info!("Success: {} is now at {}", self.branch, remote_id);
-        Ok(Some(local_id))
+    pub fn pull(&mut self) -> Result<Option<gix::hash::ObjectId>> {
+        if self.repo.is_none() {
+            self.clone_repo()?;
+        }
+        // Store the old head for comparison
+        let old_head = self.repo_head;
+
+        self.fetch()?;
+
+        let commit_id = {
+            let repo = self.repo.as_ref().context("Repo should be initialized")?;
+            let remote_tracking = format!("refs/remotes/{}/{}", self.remote_name, self.branch);
+            let remote_ref = repo.find_reference(&remote_tracking)?;
+            remote_ref.id().detach()
+        };
+
+        self.checkout(commit_id)?;
+
+        // Return the new head if it changed, otherwise None
+        if old_head != self.repo_head {
+            Ok(old_head)
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn get_change_set(&self, from_rev: &str, to_rev: &str) -> Result<String> {
