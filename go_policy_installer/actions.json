@@ -1,0 +1,5 @@
+{
+  "polset": "bash ./scripts/polset_s.bash",
+  "firewall.rules": "bash ./scripts/new/polset_s.bash",
+  "hotplug.conf": "bash ./scripts/polset_s.bash"
+}

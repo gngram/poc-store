@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "adler2"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -287,6 +293,16 @@ name = "find-msvc-tools"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a3076410a55c90011c298b04d0cfa770b00fa04e1e3c97d3f6c9de105a03844"
+
+[[package]]
+name = "flate2"
+version = "1.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfe33edd8e85a12a67454e37f8c75e730830d83e313556ab9ebf9ee7fbeb3bfb"
+dependencies = [
+ "crc32fast",
+ "miniz_oxide",
+]
 
 [[package]]
 name = "fnv"
@@ -1396,9 +1412,9 @@ checksum = "7aedcccd01fc5fe81e6b489c15b247b8b0690feb23304303a9e560f37efc560a"
 
 [[package]]
 name = "icu_properties"
-version = "2.1.1"
+version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e93fcd3157766c0c8da2f8cff6ce651a31f0810eaa1c51ec363ef790bbb5fb99"
+checksum = "020bfc02fe870ec3a66d93e677ccca0562506e5872c650f893269e08615d74ec"
 dependencies = [
  "icu_collections",
  "icu_locale_core",
@@ -1410,9 +1426,9 @@ dependencies = [
 
 [[package]]
 name = "icu_properties_data"
-version = "2.1.1"
+version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02845b3647bb045f1100ecd6480ff52f34c35f82d9880e029d329c21d1054899"
+checksum = "616c294cf8d725c6afcd8f55abc17c56464ef6211f9ed59cccffe534129c77af"
 
 [[package]]
 name = "icu_provider"
@@ -1529,9 +1545,9 @@ dependencies = [
 
 [[package]]
 name = "jiff-tzdb"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1283705eb0a21404d2bfd6eef2a7593d240bc42a0bdb39db0ad6fa2ec026524"
+checksum = "68971ebff725b9e2ca27a601c5eb38a4c5d64422c4cbab0c535f248087eda5c2"
 
 [[package]]
 name = "jiff-tzdb-platform"
@@ -1592,9 +1608,9 @@ dependencies = [
 
 [[package]]
 name = "libz-rs-sys"
-version = "0.5.3"
+version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b484ba8d4f775eeca644c452a56650e544bf7e617f1d170fe7298122ead5222"
+checksum = "15413ef615ad868d4d65dce091cb233b229419c7c0c4bcaa746c0901c49ff39c"
 dependencies = [
  "zlib-rs",
 ]
@@ -1672,6 +1688,16 @@ name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
+
+[[package]]
+name = "miniz_oxide"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
+dependencies = [
+ "adler2",
+ "simd-adler32",
+]
 
 [[package]]
 name = "mio"
@@ -1821,9 +1847,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "filter",
+ "flate2",
  "gix",
+ "tar",
  "tracing",
  "tracing-subscriber",
+ "walkdir",
 ]
 
 [[package]]
@@ -2046,9 +2075,9 @@ checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
 name = "reqwest"
-version = "0.12.24"
+version = "0.12.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d0946410b9f7b082a427e4ef5c8ff541a88b357bc6c637c40db3a68ac70a36f"
+checksum = "b6eff9328d40131d43bd911d42d79eb6a47312002a4daefc9e37f17e74a7701a"
 dependencies = [
  "base64",
  "bytes",
@@ -2269,9 +2298,9 @@ dependencies = [
 
 [[package]]
 name = "shell-words"
-version = "1.1.0"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24188a676b6ae68c3b2cb3a01be17fbf7240ce009799bb56d5b1409051e78fde"
+checksum = "dc6fe69c597f9c37bfeeeeeb33da3530379845f10be461a66d16d03eca2ded77"
 
 [[package]]
 name = "shlex"
@@ -2290,6 +2319,12 @@ dependencies = [
  "num-traits",
  "paste",
 ]
+
+[[package]]
+name = "simd-adler32"
+version = "0.3.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e320a6c5ad31d271ad523dcf3ad13e2767ad8b1cb8f047f75a8aeaf8da139da2"
 
 [[package]]
 name = "slab"
@@ -2381,6 +2416,17 @@ checksum = "8e1d1b10ced5ca923a1fcb8d03e96b8d3268065d724548c0211415ff6ac6bac4"
 dependencies = [
  "core-foundation-sys",
  "libc",
+]
+
+[[package]]
+name = "tar"
+version = "0.4.44"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d863878d212c87a19c1a610eb53bb01fe12951c0501cf5a0d65f724914a667a"
+dependencies = [
+ "filetime",
+ "libc",
+ "xattr",
 ]
 
 [[package]]
@@ -2504,9 +2550,9 @@ dependencies = [
 
 [[package]]
 name = "tower-http"
-version = "0.6.7"
+version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9cf146f99d442e8e68e585f5d798ccd3cad9a7835b917e09728880a862706456"
+checksum = "d4e6559d53cc268e5031cd8429d05415bc4cb4aefc4aa5d6cc35fbf5b924a1f8"
 dependencies = [
  "bitflags",
  "bytes",
@@ -3027,6 +3073,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9edde0db4769d2dc68579893f2306b26c6ecfbe0ef499b013d731b7b9247e0b9"
 
 [[package]]
+name = "xattr"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
+dependencies = [
+ "libc",
+ "rustix",
+]
+
+[[package]]
 name = "yoke"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3131,6 +3187,6 @@ dependencies = [
 
 [[package]]
 name = "zlib-rs"
-version = "0.5.3"
+version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36134c44663532e6519d7a6dfdbbe06f6f8192bde8ae9ed076e9b213f0e31df7"
+checksum = "51f936044d677be1a1168fae1d03b583a285a5dd9d8cbf7b24c23aa1fc775235"
