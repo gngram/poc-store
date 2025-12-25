@@ -1,0 +1,18 @@
+{
+  "proxy-config0": {
+    "url": "https://raw.githubusercontent.com/gngram/policy-store/deploy/vm-policies/business-vm/ghaf.pac",
+    "vms": [
+      "gui-vm",
+      "sys-firewall"
+    ],
+    "poll_interval_secs": 30
+  },
+  "proxy-config1": {
+    "url": "https://raw.githubusercontent.com/gngram/policy-store/main/data/common/data.json",
+    "vms": [
+      "app-vm",
+      "net-vm"
+    ],
+    "poll_interval_secs": 30
+  }
+}
